@@ -1,0 +1,74 @@
+name: mac-smoke
+# 맥 접속기 배포 zip 을 진짜 맥(애플 실리콘 · 인텔)에서 풀고 켜 보는 확인. 소스는 없음 — 공개 릴리스 파일만 받는다.
+on:
+  push:
+    branches: [mac-smoke]
+  workflow_dispatch:
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-13]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - name: 환경
+        run: |
+          sw_vers
+          uname -m
+      - name: 내려받기
+        run: |
+          curl -sSL -o mac.zip https://github.com/gusals96223-design/hanaworld-launcher/releases/download/patch-index/Hana_world_Mac.zip
+          ls -l mac.zip
+          shasum -a 256 mac.zip
+      - name: 압축 풀기(아카이브 유틸리티와 같은 엔진 ditto)
+        run: |
+          mkdir out
+          ditto -x -k mac.zip out
+          ls -la out
+          ls -la "out/Hana world.app/Contents/MacOS"
+          file "out/Hana world.app/Contents/MacOS/"*
+          cat "out/Hana world.app/Contents/Info.plist"
+          plutil -lint "out/Hana world.app/Contents/Info.plist"
+      - name: 서명 · 게이트키퍼 판정(공증 없음 = 거절이 정상)
+        continue-on-error: true
+        run: |
+          codesign -dv --verbose=2 "out/Hana world.app/Contents/MacOS/HanaWorldLauncher-arm64" 2>&1 || true
+          codesign -dv --verbose=2 "out/Hana world.app/Contents/MacOS/HanaWorldLauncher-x64" 2>&1 || true
+          codesign --verify --verbose=2 "out/Hana world.app" 2>&1 || true
+          spctl --assess -vv "out/Hana world.app" 2>&1 || true
+      - name: 켜 보기(40초)
+        run: |
+          mkdir -p shots
+          cp -R "out/Hana world.app" /Applications/
+          screencapture -x shots/0-before.png || true
+          ("/Applications/Hana world.app/Contents/MacOS/HanaWorld" > run.out 2> run.err &)
+          sleep 15
+          screencapture -x shots/1-15s.png || true
+          sleep 25
+          screencapture -x shots/2-40s.png || true
+          echo "--- 프로세스"
+          pgrep -fl HanaWorldLauncher || echo "프로세스 없음"
+          echo "--- 창 목록"
+          osascript -e 'tell application "System Events" to get name of every process whose background only is false' || true
+          echo "--- stdout"; head -c 6000 run.out || true
+          echo "--- stderr"; head -c 6000 run.err || true
+      - name: 기록 모으기
+        if: always()
+        run: |
+          mkdir -p logs
+          cp -R "$HOME/Library/Application Support/Hana world/logs" logs/ 2>/dev/null || echo "기록 폴더 없음"
+          ls -laR "$HOME/Library/Application Support/Hana world" 2>/dev/null | head -80 || true
+          cp run.out run.err logs/ 2>/dev/null || true
+          ls -la "$HOME/Library/Logs/DiagnosticReports" 2>/dev/null | tail -5 || true
+          cp "$HOME/Library/Logs/DiagnosticReports/"*HanaWorld* logs/ 2>/dev/null || true
+          for f in logs/logs/*; do echo "=== $f"; tail -c 5000 "$f"; done 2>/dev/null || true
+          pkill -f HanaWorldLauncher || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-smoke-${{ matrix.os }}
+          path: |
+            shots
+            logs
