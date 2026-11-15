@@ -6,7 +6,7 @@ on:
     paths: ['.github/workflows/mac-selfcheck.yml', 'tools/**']
   workflow_dispatch:
 env:
-  ZIP: Hana_world_Mac-v7.3.2.zip
+  ZIP: Hana_world_Mac-v7.3.3.zip
 jobs:
   selfcheck:
     strategy:
@@ -56,12 +56,21 @@ jobs:
           echo "exit=$?" | tee selfcheck.exit
           grep -v "^Photino.NET" selfcheck.out | tail -c 12000
           echo "--- stderr"; tail -c 3000 selfcheck.err
+      - name: 두 번째 실행(설치 확인 건너뛰기 길)
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          pkill -f HanaWorldLauncher || true
+          HANA_SELFCHECK=1 "/Applications/Hana world.app/Contents/MacOS/HanaWorld" --selfcheck > selfcheck2.out 2> selfcheck2.err
+          echo "exit=$?" | tee selfcheck2.exit
+          grep -v "^Photino.NET" selfcheck2.out | tail -c 6000
+          ls -la "$HOME/Library/Application Support/Hana world/"*/hana/install-ok.json 2>/dev/null || find "$HOME/Library/Application Support/Hana world" -name install-ok.json | head -3
       - name: 기록 모으기
         if: always()
         run: |
           mkdir -p logs
           cp -R "$HOME/Library/Application Support/Hana world/logs" logs/ 2>/dev/null || echo "기록 폴더 없음"
-          cp uicheck.out uicheck.err uicheck.exit selfcheck.out selfcheck.err selfcheck.exit logs/ 2>/dev/null || true
+          cp uicheck.out uicheck.err uicheck.exit selfcheck.out selfcheck.err selfcheck.exit selfcheck2.out selfcheck2.exit logs/ 2>/dev/null || true
           du -sh "$HOME/Library/Application Support/Hana world" 2>/dev/null || true
           for f in logs/logs/uicheck-*.log logs/logs/selfcheck-*.log; do echo "=== $f"; tail -c 6000 "$f"; done 2>/dev/null || true
       - uses: actions/upload-artifact@v4
