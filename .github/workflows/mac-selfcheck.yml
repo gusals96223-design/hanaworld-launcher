@@ -1,0 +1,58 @@
+name: mac-selfcheck
+# 맥 접속기 점검용 판을 진짜 맥에서 계정 없이 끝까지 돌려 본다: 사전 패치 → 바닐라 · Fabric 설치 → 자바 -version, 그리고 새 판 바꿔 끼우기 sh.
+on:
+  push:
+    branches: [mac-smoke]
+    paths: ['.github/workflows/mac-selfcheck.yml', 'tools/**']
+  workflow_dispatch:
+jobs:
+  selfcheck:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - name: 환경
+        run: |
+          sw_vers
+          uname -m
+      - name: 내려받기 · 풀기
+        run: |
+          curl -sSL -o mac.zip https://github.com/gusals96223-design/hanaworld-launcher/releases/download/patch-index/Hana_world_Mac-v7.3.0-selfcheck.zip
+          shasum -a 256 mac.zip
+          mkdir out
+          ditto -x -k mac.zip out
+          ls -la out
+      - name: 바꿔 끼우기 시험
+        continue-on-error: true
+        run: |
+          sh tools/test-replace.sh "out/Hana world.app" mac.zip 2>&1 | tail -60
+      - name: 끝까지 점검(--selfcheck)
+        continue-on-error: true
+        run: |
+          mkdir -p shots
+          (sleep 60; screencapture -x shots/selfcheck-60s.png) &
+          (sleep 300; screencapture -x shots/selfcheck-300s.png) &
+          HANA_SELFCHECK=1 "out/Hana world.app/Contents/MacOS/HanaWorld" --selfcheck > selfcheck.out 2> selfcheck.err
+          echo "exit=$?" | tee selfcheck.exit
+          tail -c 12000 selfcheck.out
+          echo "--- stderr"; tail -c 3000 selfcheck.err
+      - name: 기록 모으기
+        if: always()
+        run: |
+          mkdir -p logs
+          cp -R "$HOME/Library/Application Support/Hana world/logs" logs/ 2>/dev/null || echo "기록 폴더 없음"
+          cp selfcheck.out selfcheck.err selfcheck.exit logs/ 2>/dev/null || true
+          du -sh "$HOME/Library/Application Support/Hana world" 2>/dev/null || true
+          ls "$HOME/Library/Application Support/Hana world" 2>/dev/null || true
+          for f in logs/logs/selfcheck-*.log; do echo "=== $f"; tail -c 6000 "$f"; done 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-selfcheck-${{ matrix.os }}
+          path: |
+            shots
+            logs
