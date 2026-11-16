@@ -6,7 +6,7 @@ on:
     paths: ['.github/workflows/mac-selfcheck.yml', 'tools/**']
   workflow_dispatch:
 env:
-  ZIP: Hana_world_Mac-v7.3.3.zip
+  ZIP: Hana_world_Mac-v7.4.0.zip
 jobs:
   selfcheck:
     strategy:
